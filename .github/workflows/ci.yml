@@ -1,0 +1,98 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        component: [app, router]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: ${{ matrix.component }}/requirements.txt
+
+      - name: Install
+        working-directory: ${{ matrix.component }}
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install ruff pytest pytest-asyncio
+
+      - name: Lint
+        working-directory: ${{ matrix.component }}
+        run: ruff check src tests
+
+      - name: Test
+        working-directory: ${{ matrix.component }}
+        env:
+          PYTHONPATH: .
+        run: pytest -q
+
+  build-image:
+    runs-on: ubuntu-latest
+    needs: lint-and-test
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: app
+          push: false
+          tags: dr-demo-api:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  integration-drill:
+    runs-on: ubuntu-latest
+    needs: build-image
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Bring up the stack
+        run: docker compose up -d --build
+
+      - name: Wait for router
+        run: |
+          for i in {1..30}; do
+            if curl -fsS http://localhost:8000/health >/dev/null 2>&1; then
+              echo "router is up"; exit 0
+            fi
+            sleep 2
+          done
+          docker compose logs
+          exit 1
+
+      - name: Wait for pool to settle
+        run: sleep 15
+
+      - name: Show pool
+        run: curl -fsS http://localhost:8000/admin/pool | python3 -m json.tool
+
+      - name: Run failure drill
+        run: bash scripts/simulate-failure.sh aws-mumbai
+
+      - name: Recover and canary failback
+        run: timeout 120 bash scripts/canary-failback.sh aws-mumbai || true
+
+      - name: Final pool snapshot
+        if: always()
+        run: |
+          curl -fsS http://localhost:8000/admin/pool | python3 -m json.tool || true
+          docker compose logs --tail 100
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v

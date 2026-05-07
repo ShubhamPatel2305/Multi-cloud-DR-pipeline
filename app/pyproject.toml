@@ -1,0 +1,17 @@
+[project]
+name = "dr-demo-api"
+version = "0.1.0"
+description = "Sample API used to demonstrate multi-region active-passive DR"
+requires-python = ">=3.12"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "C4", "SIM"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
