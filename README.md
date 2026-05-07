@@ -21,7 +21,7 @@ real.
 > rolls back to 0% and traffic stays on the standby. The whole thing runs on
 > your laptop in under three minutes — `make up && make drill-failback`.
 
-![Architecture](diagrams/architecture.png)
+![Architecture](diagrams/Architecture.png)
 
 ## Why this exists
 
